@@ -27,7 +27,7 @@ export interface Claim {
   carelon_id?: string
   consent_to_treat?: boolean
   consent_to_bill?: boolean
-  remittance_data?: any
+  remittance_data?: Record<string, unknown>
   created_at?: string
 }
 
@@ -59,7 +59,7 @@ export interface CreateClaimData {
   carelon_id?: string
   consent_to_treat?: boolean
   consent_to_bill?: boolean
-  remittance_data?: any
+  remittance_data?: Record<string, unknown>
 }
 
 export interface UpdateClaimData extends Partial<CreateClaimData> {

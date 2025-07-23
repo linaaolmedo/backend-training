@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Claim, CreateClaimData, UpdateClaimData } from '@/types/claim'
+import { Student } from '@/types/student'
 import { supabase } from '@/utils/supabase/client'
 
 interface ClaimFormProps {
@@ -41,7 +42,7 @@ export default function ClaimForm({ claim, onSubmit, onClose }: ClaimFormProps) 
     consent_to_bill: false
   })
   const [loading, setLoading] = useState(false)
-  const [students, setStudents] = useState<any[]>([])
+  const [students, setStudents] = useState<Pick<Student, 'id' | 'ssid' | 'first_name' | 'last_name' | 'district' | 'birthdate'>[]>([])
   const [loadingStudents, setLoadingStudents] = useState(false)
 
   useEffect(() => {

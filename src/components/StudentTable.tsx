@@ -114,7 +114,7 @@ export default function StudentTable({ students, onEdit, onDelete }: StudentTabl
                         </div>
                         {student.preferred_name && (
                           <div className="text-sm text-gray-500 dark:text-gray-300">
-                            "{student.preferred_name}"
+                            &ldquo;{student.preferred_name}&rdquo;
                           </div>
                         )}
                       </div>

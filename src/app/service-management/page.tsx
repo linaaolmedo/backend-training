@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/utils/supabase/client'
-import { Service, ServiceWithStudentPractitioner, CreateServiceData, UpdateServiceData } from '@/types/service'
+import { ServiceWithStudentPractitioner, CreateServiceData, UpdateServiceData } from '@/types/service'
 import ServiceTable from '@/components/ServiceTable'
 import ServiceForm from '@/components/ServiceForm'
 import Link from 'next/link'

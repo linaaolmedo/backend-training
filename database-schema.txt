@@ -1,0 +1,279 @@
+/* ===========================================================
+   KCSOS Prototype — Structured Tables for Supabase (PostgreSQL)
+   -----------------------------------------------------------
+   Core entities: organization, qualification, billing_code,
+   "user", student, service, claim, permission (2‑layer),
+   groups, and simple join tables.
+   • SERIAL PKs for every table
+   • FK constraints for basic relationships
+   • No RLS enabled
+   • Descriptive comments for long‑term maintainability
+   ===========================================================*/
+
+--------------------------------------------------------------
+-- 1. ORGANIZATION
+--------------------------------------------------------------
+CREATE TABLE organization (
+    id              SERIAL PRIMARY KEY,
+    name            TEXT        NOT NULL,                 -- Full legal org name
+    orp_name        TEXT,                                 -- Rendering provider name
+    orp_npi         TEXT,                                 -- ORP NPI number
+    payer_type      TEXT        NOT NULL,                 -- 'Fee Schedule' | 'LEA‑BOP' | etc.
+    status          TEXT        DEFAULT 'Active',         -- 'Active' | 'Inactive'
+    effective_date  DATE,
+    contact_email   TEXT
+);
+COMMENT ON TABLE  organization IS 'Educational or billing entity (district, LEA‑BOP, etc.)';
+
+--------------------------------------------------------------
+-- 2. QUALIFICATION (master list)
+--------------------------------------------------------------
+CREATE TABLE qualification (
+    id               SERIAL PRIMARY KEY,
+    type             TEXT,                               -- License | Credential | Certificate
+    code             TEXT UNIQUE,                        -- Unique qualification code
+    description      TEXT,
+    status           TEXT        DEFAULT 'Active',       -- Active | Archived
+    effective_date   DATE,
+    expiration_date  DATE,
+    requirements     TEXT[],                             -- Free‑form requirement list
+    jurisdiction     TEXT                                -- State / region
+);
+COMMENT ON TABLE qualification IS 'Professional licenses / credentials referenced by users & orgs';
+
+--------------------------------------------------------------
+-- 3. BILLING CODE (master list)
+--------------------------------------------------------------
+CREATE TABLE billing_code (
+    id                    SERIAL PRIMARY KEY,
+    code                  TEXT UNIQUE NOT NULL,          -- CPT / HCPCS / custom
+    type                  TEXT,                          -- Treatment | Assessment | ...
+    description           TEXT,
+    unit                  TEXT,                          -- e.g. "per 15 minutes"
+    rate                  NUMERIC(12,2),                 -- Monetary rate
+    eligible_practitioners TEXT[],                       -- Practitioner role tags
+    status                TEXT DEFAULT 'Active',
+    effective_date        DATE,
+    payer_specific        BOOLEAN DEFAULT FALSE
+);
+COMMENT ON TABLE billing_code IS 'Service / procedure codes and rates';
+
+--------------------------------------------------------------
+-- 4. USER (accounts & staff)
+--------------------------------------------------------------
+CREATE TABLE app_user (
+    id               SERIAL PRIMARY KEY,
+    first_name       TEXT NOT NULL,
+    last_name        TEXT NOT NULL,
+    email            TEXT NOT NULL UNIQUE,
+    phone            TEXT,
+    address          TEXT,
+    npi              TEXT,                               -- For practitioners
+    license_number   TEXT,
+    hire_date        DATE,
+    status           TEXT DEFAULT 'Active',              -- Active | Inactive | Suspended
+    last_login       TIMESTAMPTZ,
+    role             TEXT NOT NULL,                      -- Practitioner | Supervisor | Admin | Support
+    department       TEXT,
+    supervisor_id    INTEGER REFERENCES app_user(id),    -- Self‑ref FK
+    districts        TEXT[],                             -- List of district names/IDs
+    user_type        TEXT,                               -- Embedded | Affiliated
+    permission_level TEXT                                -- Standard | Advanced | Full
+);
+COMMENT ON TABLE app_user IS 'All platform users (practitioners, supervisors, admins, etc.)';
+
+--------------------------------------------------------------
+-- 5. STUDENT
+--------------------------------------------------------------
+CREATE TABLE student (
+    id                         SERIAL PRIMARY KEY,
+    ssid                       TEXT UNIQUE NOT NULL,
+    local_id                   TEXT,
+    first_name                 TEXT NOT NULL,
+    last_name                  TEXT NOT NULL,
+    preferred_name             TEXT,
+    birthdate                  DATE NOT NULL,
+    status                     TEXT        DEFAULT 'Active',
+    last_modified_at           TIMESTAMPTZ DEFAULT NOW(),
+    gender                     TEXT,
+    grade                      SMALLINT,
+    district                   TEXT NOT NULL,
+    school                     TEXT,
+    address                    TEXT,
+    city                       TEXT,
+    state                      TEXT,
+    zip_code                   TEXT,
+    primary_contact_name       TEXT,
+    primary_contact_phone      TEXT,
+    transportation_team        TEXT,
+    transportation_needs       TEXT,
+    practitioner_id            INTEGER REFERENCES app_user(id),
+    primary_disability         TEXT,
+    parental_consent_on_file   BOOLEAN     DEFAULT FALSE,
+    parental_consent_in_bill   BOOLEAN     DEFAULT FALSE,
+    parental_consent_given     BOOLEAN     DEFAULT FALSE,
+    parental_consent_date      DATE,
+    comments                   TEXT,
+    insurance_type             TEXT,
+    insurance_carrier          TEXT,
+    insurance_group_number     TEXT,
+    insurance_policy_number    TEXT,
+    insurance_effective_date   DATE,
+    medi_cal_eligible          BOOLEAN     DEFAULT FALSE,
+    medi_cal_benefits_id       TEXT,
+    copay_id                   TEXT,
+    iep_date                   DATE,
+    next_review_date           DATE,
+    emergency_contact_name     TEXT,
+    emergency_contact_phone    TEXT
+);
+COMMENT ON TABLE student IS 'Core demographic, educational, and insurance data for each learner';
+
+--------------------------------------------------------------
+-- 6. SERVICE (scheduled / delivered sessions)
+--------------------------------------------------------------
+CREATE TABLE service (
+    id                 SERIAL PRIMARY KEY,
+    student_id         INTEGER    NOT NULL REFERENCES student(id),
+    practitioner_id    INTEGER    NOT NULL REFERENCES app_user(id),
+    service_date       DATE       NOT NULL,
+    service_time       TIME,
+    end_time           TIME,
+    duration_minutes   INTEGER,                     -- Planned duration
+    service_type       TEXT,                        -- Matching billing/service taxonomy
+    location           TEXT,                        -- School | Home | Clinic | etc.
+    status             TEXT     DEFAULT 'Upcoming',-- Upcoming | Incomplete | Completed | Cancelled
+    case_notes         TEXT,
+    appointment_notes  TEXT,
+    is_group_service   BOOLEAN  DEFAULT FALSE,
+    group_name         TEXT,
+    created_at         TIMESTAMPTZ DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ DEFAULT NOW()
+);
+COMMENT ON TABLE service IS 'Individual or group therapy / education sessions';
+
+--------------------------------------------------------------
+-- 7. CLAIM
+--------------------------------------------------------------
+CREATE TABLE claim (
+    id                         SERIAL PRIMARY KEY,        -- Internal identifier
+    claim_number               TEXT UNIQUE NOT NULL,
+    batch_number               TEXT,
+    status                     TEXT      DEFAULT 'Incomplete',
+    service_date               DATE,
+    billed_amount              NUMERIC(12,2),
+    paid_amount                NUMERIC(12,2),
+    finalized_date             DATE,
+    service_code               TEXT,                      -- From billing_code
+    service_description        TEXT,
+    quantity                   NUMERIC,
+    quantity_type              TEXT,
+    location                   TEXT,
+    frequency_type             TEXT,
+    rendering_provider         TEXT,
+    rendering_provider_npi     TEXT,
+    referring_provider         TEXT,
+    referring_provider_npi     TEXT,
+    district                   TEXT,
+    student_ssid               TEXT REFERENCES student(ssid),
+    student_name               TEXT,
+    student_dob                DATE,
+    insurance_type             TEXT,
+    insurance_carrier          TEXT,
+    medi_cal_eligible          BOOLEAN,
+    carelon_id                 TEXT,
+    consent_to_treat           BOOLEAN,
+    consent_to_bill            BOOLEAN,
+    remittance_data            JSONB,                     -- 835 ERA info
+    created_at                 TIMESTAMPTZ DEFAULT NOW()
+);
+COMMENT ON TABLE claim IS 'Lifecycle of insurance claims (837/835 integrations)';
+
+--------------------------------------------------------------
+-- 8. PERMISSION (two‑layer: category & item)
+--------------------------------------------------------------
+CREATE TABLE permission_category (
+    id        SERIAL PRIMARY KEY,
+    title     TEXT NOT NULL,
+    icon      TEXT,
+    expanded  BOOLEAN DEFAULT FALSE
+);
+COMMENT ON TABLE permission_category IS 'Top‑level UI/functional permission grouping';
+
+CREATE TABLE permission_item (
+    id               SERIAL PRIMARY KEY,
+    category_id      INTEGER NOT NULL REFERENCES permission_category(id) ON DELETE CASCADE,
+    name             TEXT    NOT NULL UNIQUE,
+    practitioner     BOOLEAN DEFAULT FALSE,
+    supervisor       BOOLEAN DEFAULT FALSE,
+    district_admin   BOOLEAN DEFAULT FALSE,
+    system_admin     BOOLEAN DEFAULT FALSE
+);
+COMMENT ON TABLE permission_item IS 'Atomic permissions mapped to roles';
+
+--------------------------------------------------------------
+-- 9. GROUP (therapy / service groups) + membership
+--------------------------------------------------------------
+CREATE TABLE service_group (
+    id                SERIAL PRIMARY KEY,
+    name              TEXT NOT NULL,
+    description       TEXT,
+    created_date      DATE     DEFAULT CURRENT_DATE,
+    created_by        INTEGER  REFERENCES app_user(id),
+    practitioner_id   INTEGER  REFERENCES app_user(id),
+    status            TEXT     DEFAULT 'Active',     -- Active | Inactive | Completed
+    service_type      TEXT,
+    meeting_frequency TEXT,
+    duration          TEXT,                          -- e.g., '45 minutes'
+    location          TEXT
+);
+COMMENT ON TABLE service_group IS 'Named collection of students for group services';
+
+CREATE TABLE group_membership (
+    id            SERIAL PRIMARY KEY,
+    group_id      INTEGER NOT NULL REFERENCES service_group(id) ON DELETE CASCADE,
+    student_id    INTEGER NOT NULL REFERENCES student(id)       ON DELETE CASCADE,
+    join_date     DATE,
+    status        TEXT      DEFAULT 'Active',        -- Active | Inactive
+    exit_date     DATE,
+    exit_reason   TEXT,
+    UNIQUE(group_id, student_id)                     -- Prevent duplicate members
+);
+COMMENT ON TABLE group_membership IS 'Students linked to service groups';
+
+--------------------------------------------------------------
+-- 10. USER ←→ QUALIFICATION  (many‑to‑many helper)
+--------------------------------------------------------------
+CREATE TABLE user_qualification (
+    id                 SERIAL PRIMARY KEY,
+    user_id            INTEGER NOT NULL REFERENCES app_user(id)        ON DELETE CASCADE,
+    qualification_id   INTEGER NOT NULL REFERENCES qualification(id)   ON DELETE CASCADE,
+    date_obtained      DATE,
+    expiration_date    DATE,
+    is_active          BOOLEAN DEFAULT TRUE,
+    verification_status TEXT    DEFAULT 'Pending',   -- Verified | Pending | Expired
+    UNIQUE(user_id, qualification_id)
+);
+COMMENT ON TABLE user_qualification IS 'Tracks which users hold which qualifications';
+
+--------------------------------------------------------------
+-- 11. USER ←→ AUTHORIZED SERVICE (billing codes)
+--------------------------------------------------------------
+CREATE TABLE user_authorized_service (
+    id             SERIAL PRIMARY KEY,
+    user_id        INTEGER NOT NULL REFERENCES app_user(id)   ON DELETE CASCADE,
+    billing_code_id INTEGER NOT NULL REFERENCES billing_code(id) ON DELETE CASCADE,
+    UNIQUE(user_id, billing_code_id)
+);
+COMMENT ON TABLE user_authorized_service IS 'Maps practitioners to allowed billing codes';
+
+--------------------------------------------------------------
+-- Basic helpful indexes (opt‑in; adjust as needed)
+--------------------------------------------------------------
+CREATE INDEX idx_student_practitioner   ON student(practitioner_id);
+CREATE INDEX idx_service_student_date   ON service(student_id, service_date);
+CREATE INDEX idx_claim_status           ON claim(status);
+CREATE INDEX idx_user_role              ON app_user(role);
+CREATE INDEX idx_group_practitioner     ON service_group(practitioner_id);
+
+-- Done.

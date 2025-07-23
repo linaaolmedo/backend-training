@@ -76,6 +76,16 @@ export default function BillingClaimsManagement() {
     }
   }
 
+  const handleSubmitClaim = async (claimData: CreateClaimData | UpdateClaimData) => {
+    if ('id' in claimData) {
+      // This is an update operation
+      await handleUpdateClaim(claimData as UpdateClaimData)
+    } else {
+      // This is a create operation
+      await handleCreateClaim(claimData as CreateClaimData)
+    }
+  }
+
   const handleDeleteClaim = async (id: number) => {
     if (!confirm('Are you sure you want to delete this claim? This action cannot be undone.')) return
 
@@ -185,7 +195,7 @@ export default function BillingClaimsManagement() {
       {showForm && (
         <ClaimForm
           claim={editingClaim}
-          onSubmit={editingClaim ? handleUpdateClaim : handleCreateClaim}
+          onSubmit={handleSubmitClaim}
           onClose={handleCloseForm}
         />
       )}
